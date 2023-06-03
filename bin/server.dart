@@ -229,11 +229,6 @@ void main(List<String> args) async {
 
   // check, if .env does provide the necessary variables
   print('read all vars? ${env.isEveryDefined([
-        'DB_CON_HOST',
-        'DB_CON_PORT',
-        'DB_CON_USER',
-        'DB_CON_PASSWORD',
-        'DB_CON_DATABASE',
         'SERVER_PORT',
         'USE_PRODUCTION_DB'
       ])}');

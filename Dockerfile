@@ -16,8 +16,6 @@ FROM scratch
 COPY --from=build /runtime/ /
 COPY --from=build /app/bin/server /app/bin/
 
-COPY .env ./.env
-
 # Start server.
 EXPOSE 3000
 CMD ["/app/bin/server"]
