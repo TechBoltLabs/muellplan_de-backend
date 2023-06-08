@@ -142,6 +142,9 @@ Future<Response> _collectionDatesHandler(Request request) async {
       .query(selectCollectionDatesQuery, [locationName, streetName, date]);
   // print("query executed");
 
+  // close the connection
+  await conn.close();
+
   for (var row in results) {
     collectionDates.putIfAbsent(row[0], () => []).add(row[1]);
   }
