@@ -18,7 +18,9 @@ final _router = Router()
   ..get('/locations', _locationsHandler)
   ..get('/streets/<locationCode>', _streetsHandler)
   ..get('/collection-dates/<locationCode>/<streetCode>/<date>',
-      _collectionDatesHandler);
+      _collectionDatesHandler)
+  ..post('/subscribe', _subscribeHandler)
+  ..post('/unsubscribe/<hash_value>', _unsubscribeHandler);
 
 Response _rootHandler(Request req) {
   return Response.ok("possible endpoints are:</br>"
@@ -152,8 +154,183 @@ Future<Response> _collectionDatesHandler(Request request) async {
   return Response.ok(jsonEncode(collectionDates));
 }
 
+Future<Response> _subscribeHandler(Request request) async {
+  // get the body of the request
+  String body = await request.readAsString();
+
+  late Map<String, dynamic> bodyMap;
+
+  try {
+    // parse the body
+    bodyMap = jsonDecode(body);
+  } catch (e) {
+    return Response.badRequest(body: 'the body is not a valid json');
+  }
+
+  // initialize the variables
+  late String name,
+      email,
+      locationCode,
+      streetCode,
+      daysBefore,
+      notificationTime,
+      categories;
+
+  // check if all attributes are present
+  // and assign them to variables
+  try {
+    // get the name
+    name = bodyMap['name']!;
+    // get the email address
+    email = bodyMap['email']!;
+    // get the location code
+    locationCode = bodyMap['locationCode']!;
+    // get the street code
+    streetCode = bodyMap['streetCode']!;
+    // get the daysBefore
+    daysBefore = bodyMap['daysBefore']!;
+    // get the notificationTime
+    notificationTime = bodyMap['notificationTime']!;
+    // get the categories
+    categories = bodyMap['categories']!;
+  } catch (e) {
+    return Response.badRequest(body: 'a subscription attribute is missing');
+  }
+
+  // connect to the database
+  MySqlConnection conn = await MySqlConnection.connect(_dbSettings);
+
+  // create the statement to call the stored procedure to insert or update the subscription
+  String insertOrUpdateSubscriptionQuery =
+      "call insertOrUpdateSubscriber(?, ?, ?, ?, ?, ?, ?);";
+
+  // set the parameters for the statement
+  List<String> parameters = [
+    name,
+    email,
+    locationCode,
+    streetCode,
+    notificationTime,
+    daysBefore,
+    categories
+  ];
+
+  // execute the statement
+  await conn.query(insertOrUpdateSubscriptionQuery, parameters);
+
+  // check, if the import was successful
+  String selectSubscriberWithSettingsQuery =
+      "select count(*), name, locationCode, streetCode, notificationTime, notificationDaysBefore, mail_hash from subscribersView where email=?;";
+  String selectSubscribersCategoriesQuery =
+      "select category from subscribersCategoriesView where email=?;";
+
+  int dbUserCount;
+  String dbUserName,
+      dbUserLocationCode,
+      dbUserStreetCode,
+      dbUserNotificationTime,
+      dbUserDaysBefore,
+      dbUserMailHash;
+  List<String> dbUserCategories = [];
+
+  Results results =
+      await conn.query(selectSubscriberWithSettingsQuery, [email]);
+  dbUserCount = results.first[0];
+  if (dbUserCount == 1) {
+    dbUserName = results.first[1].toString();
+    dbUserLocationCode = results.first[2].toString();
+    dbUserStreetCode = results.first[3].toString();
+    dbUserNotificationTime = results.first[4].toString();
+    dbUserDaysBefore = results.first[5].toString();
+    dbUserMailHash = results.first[6].toString();
+    if (dbUserName == name &&
+        dbUserLocationCode == locationCode &&
+        dbUserStreetCode == streetCode &&
+        dbUserNotificationTime == notificationTime &&
+        dbUserDaysBefore == daysBefore) {
+      results = await conn.query(selectSubscribersCategoriesQuery, [email]);
+      for (var result in results) {
+        dbUserCategories.add(result[0].toString());
+      }
+    } else {
+      return Response.internalServerError(
+          body: "the user's settings could not be set");
+    }
+  } else {
+    return Response.internalServerError(body: 'the user could not be imported');
+  }
+
+  // close the connection
+  await conn.close();
+
+  // TODO: implement the sending of the confirmation email
+  _sendSubscriptionConfirmationMail(dbUserName, email, dbUserMailHash);
+
+  // return the status code
+  return Response.ok('');
+}
+
+Future<Response> _unsubscribeHandler(Request request, String hashValue) async {
+  bool success = await _unsubscribeUser(hashValue);
+
+  if (!success) {
+    return Response.internalServerError(
+        body: "the user could not be unsubscribed");
+  }
+
+  return Response.ok("the user was successfully unsubscribed");
+}
+
+Future<bool> _unsubscribeUser(String mailHash) async {
+  // TODO: implement this
+  bool success = true;
+  // connect to database
+  MySqlConnection conn = await MySqlConnection.connect(_dbSettings);
+
+  // create the statement to call the stored procedure to unsubscribe the user
+  String unsubscribeUserQuery = "call unsubscribeUserByHash(?);";
+
+  // set the parameters for the statement
+  List<String> parameters = [mailHash];
+
+  // execute the statement
+  await conn.query(unsubscribeUserQuery, parameters);
+
+  // check, if the deletion was successful
+  String selectSubscriberWithSettingsQuery =
+      "select count(*) from subscribersView where mail_hash=?;";
+
+  // initialize the variables
+  int dbUserCount;
+
+  // execute the statement
+  Results results =
+      await conn.query(selectSubscriberWithSettingsQuery, parameters);
+
+  dbUserCount = results.first[0];
+  if (dbUserCount != 0) {
+    success = false;
+  }
+
+  // close the connection
+  await conn.close();
+
+  return success;
+}
+
+// TODO: implement this
+void _sendSubscriptionConfirmationMail(
+    String dbUserName, String email, String dbUserMailHash) {
+// TODO: build the unsubscription link and include it in the email
+
+  print("placeholder for sending the confirmation email\n"
+      "name: $dbUserName\n"
+      "email: $email\n"
+      "mail hash: $dbUserMailHash\n");
+}
+
 initDBSettings(DotEnv env) {
-  ConnectionSettings? _tmpConnectionSettings;
+  ConnectionSettings? tmpConnectionSettings;
 
   // this part is for running the app as a docker container
   try {
@@ -188,7 +365,7 @@ initDBSettings(DotEnv env) {
       }
     }
 
-    _tmpConnectionSettings = ConnectionSettings(
+    tmpConnectionSettings = ConnectionSettings(
         host: host!, port: port!, user: user!, password: password!, db: db!);
   } on ArgumentError catch (e) {
     print('Error: ${e.message}');
@@ -197,33 +374,33 @@ initDBSettings(DotEnv env) {
     print('An unexpected error occurred: $e');
   }
 
-  // this two ConnectionSettings objects are used in application (non-docker) mode
-  // .env file is required
-  _dbSettingsProduction = ConnectionSettings(
-    host: env['DB_PRODUCTION_CON_HOST']!,
-    port: int.parse(env['DB_PRODUCTION_CON_PORT']!),
-    user: env['DB_PRODUCTION_CON_USER'],
-    password: env['DB_PRODUCTION_CON_PASSWORD'],
-    db: env['DB_CON_PRODUCTION_DATABASE'],
-  );
-
-  _dbSettingsLocal = ConnectionSettings(
-    host: env['DB_CON_HOST']!,
-    port: int.parse(env['DB_CON_PORT']!),
-    user: env['DB_CON_USER'],
-    password: env['DB_CON_PASSWORD'],
-    db: env['DB_CON_DATABASE'],
-  );
+  // // this two ConnectionSettings objects are used in application (non-docker) mode
+  // // .env file is required
+  // _dbSettingsProduction = ConnectionSettings(
+  //   host: env['DB_PRODUCTION_CON_HOST']!,
+  //   port: int.parse(env['DB_PRODUCTION_CON_PORT']!),
+  //   user: env['DB_PRODUCTION_CON_USER'],
+  //   password: env['DB_PRODUCTION_CON_PASSWORD'],
+  //   db: env['DB_CON_PRODUCTION_DATABASE'],
+  // );
+  //
+  // _dbSettingsLocal = ConnectionSettings(
+  //   host: env['DB_CON_HOST']!,
+  //   port: int.parse(env['DB_CON_PORT']!),
+  //   user: env['DB_CON_USER'],
+  //   password: env['DB_CON_PASSWORD'],
+  //   db: env['DB_CON_DATABASE'],
+  // );
 
   // assign the correct object to the _dbSettings variable (for communication with the db)
-  if (_tmpConnectionSettings == null) {
+  if (tmpConnectionSettings == null) {
     if (env['USE_PRODUCTION_DB'] == 'true') {
       _dbSettings = _dbSettingsProduction;
     } else {
       _dbSettings = _dbSettingsLocal;
     }
   } else {
-    _dbSettings = _tmpConnectionSettings;
+    _dbSettings = tmpConnectionSettings;
   }
 }
 
@@ -249,7 +426,7 @@ void main(List<String> args) async {
       .addHandler(_router);
 
   // For running in containers, we respect the PORT environment variable.
-  final port = int.parse(env['SERVER_PORT'] ?? '8080');
+  final port = int.parse(env['SERVER_PORT'] ?? '3000');
   final server = await serve(handler, ip, port);
   print('Server listening on port ${server.port}');
 }
