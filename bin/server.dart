@@ -8,9 +8,9 @@ import 'package:shelf/shelf_io.dart';
 import 'package:shelf_cors_headers/shelf_cors_headers.dart' as shelf_cors;
 import 'package:shelf_router/shelf_router.dart';
 
-late final ConnectionSettings _dbSettingsLocal;
-late final ConnectionSettings _dbSettingsProduction;
 late final ConnectionSettings _dbSettings;
+
+// TODO: split this into multiple files
 
 // Configure routes.
 final _router = Router()
@@ -365,42 +365,13 @@ initDBSettings(DotEnv env) {
       }
     }
 
-    tmpConnectionSettings = ConnectionSettings(
+    _dbSettings = ConnectionSettings(
         host: host!, port: port!, user: user!, password: password!, db: db!);
   } on ArgumentError catch (e) {
     print('Error: ${e.message}');
     exit(1);
   } catch (e) {
     print('An unexpected error occurred: $e');
-  }
-
-  // // this two ConnectionSettings objects are used in application (non-docker) mode
-  // // .env file is required
-  // _dbSettingsProduction = ConnectionSettings(
-  //   host: env['DB_PRODUCTION_CON_HOST']!,
-  //   port: int.parse(env['DB_PRODUCTION_CON_PORT']!),
-  //   user: env['DB_PRODUCTION_CON_USER'],
-  //   password: env['DB_PRODUCTION_CON_PASSWORD'],
-  //   db: env['DB_CON_PRODUCTION_DATABASE'],
-  // );
-  //
-  // _dbSettingsLocal = ConnectionSettings(
-  //   host: env['DB_CON_HOST']!,
-  //   port: int.parse(env['DB_CON_PORT']!),
-  //   user: env['DB_CON_USER'],
-  //   password: env['DB_CON_PASSWORD'],
-  //   db: env['DB_CON_DATABASE'],
-  // );
-
-  // assign the correct object to the _dbSettings variable (for communication with the db)
-  if (tmpConnectionSettings == null) {
-    if (env['USE_PRODUCTION_DB'] == 'true') {
-      _dbSettings = _dbSettingsProduction;
-    } else {
-      _dbSettings = _dbSettingsLocal;
-    }
-  } else {
-    _dbSettings = tmpConnectionSettings;
   }
 }
 
@@ -410,7 +381,11 @@ void main(List<String> args) async {
   // check, if .env does provide the necessary variables
   print('read all vars? ${env.isEveryDefined([
         'SERVER_PORT',
-        'USE_PRODUCTION_DB'
+        'EMAIL_FROM',
+        'MAIL_HOST',
+        'MAIL_PORT',
+        'MAIL_AUTH_USER',
+        'MAIL_AUTH_PASS'
       ])}');
 
   // initialize the database connection settings
