@@ -6,3 +6,4 @@
 compose.yml
 muellplan_de-backend.iml
 muellplan_de-backend_v*.tar 
+pubspec.lock
