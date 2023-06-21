@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cron/cron.dart';
 import 'package:dotenv/dotenv.dart';
 import 'package:mysql1/mysql1.dart';
 import 'package:shelf/shelf.dart';
@@ -8,7 +9,10 @@ import 'package:shelf/shelf_io.dart';
 import 'package:shelf_cors_headers/shelf_cors_headers.dart' as shelf_cors;
 import 'package:shelf_router/shelf_router.dart';
 
+import 'services/mail_service.dart';
+
 late final ConnectionSettings _dbSettings;
+late final MailService _mailService;
 
 // TODO: split this into multiple files
 
@@ -20,7 +24,8 @@ final _router = Router()
   ..get('/collection-dates/<locationCode>/<streetCode>/<date>',
       _collectionDatesHandler)
   ..post('/subscribe', _subscribeHandler)
-  ..post('/unsubscribe/<hash_value>', _unsubscribeHandler);
+  ..get('/unsubscribe/<hash_value>', _unsubscribeHandler);
+  // ..get('/send-mails', _sendMailsHandler);
 
 Response _rootHandler(Request req) {
   return Response.ok("possible endpoints are:</br>"
@@ -37,34 +42,19 @@ Response _rootHandler(Request req) {
 Future<Response> _locationsHandler(Request request) async {
   // connect to the database
   MySqlConnection conn = await MySqlConnection.connect(_dbSettings);
-  // print('Connected to database');
 
   // query the database
   Results results =
       await conn.query('SELECT locationName, locationCode FROM locations');
-  // print('Query executed');
 
   // close the connection
   await conn.close();
-  // print('Connection closed');
 
   List<List<String>> locations = [];
   // iterate over the results
   for (var result in results) {
     locations.add([result[0].toString(), result[1].toString()]);
   }
-  //
-  // // transform the locations list to a format, where the single values will be enclosed in double-quotes
-  // List<String> quotedLocationLists = locations.map((list){
-  //   // transform the inner lists to quoted-string-lists
-  //   List<String> quotedLocations = list.map((s)=> '"$s"').toList();
-  //
-  //   // join the inner list into a string with comma separation
-  //   return '[${quotedLocations.join(', ')}]';
-  // }).toList();
-  //
-  // // join the outer list with commas
-  // String responseBody = quotedLocationLists.join(', ');
 
   // return the results
   return Response.ok(jsonEncode(locations));
@@ -82,17 +72,14 @@ Future<Response> _streetsHandler(Request request) async {
 
   // connect to the database
   MySqlConnection conn = await MySqlConnection.connect(_dbSettings);
-  // print("Connected to database");
 
   // query the database
   Results results = await conn.query(selectLocationIDQuery, [locationCode]);
   locationID = results.first[0].toString();
   results = await conn.query(selectStreetsListQuery, [locationID]);
-  // print("Query executed");
 
   // close the connection
   await conn.close();
-  // print("Connection closed");
 
   // create a list of street-streetCode pairs
   List<List<String>> streets = [];
@@ -102,7 +89,6 @@ Future<Response> _streetsHandler(Request request) async {
   }
 
   // return the streets
-  // return Response.ok(streetsQuoted.toString());
   return Response.ok(jsonEncode(streets));
 }
 
@@ -128,7 +114,6 @@ Future<Response> _collectionDatesHandler(Request request) async {
 
   // connect to database
   MySqlConnection conn = await MySqlConnection.connect(_dbSettings);
-  // print("connected to database");
 
   // query the database
   // get location name
@@ -142,7 +127,6 @@ Future<Response> _collectionDatesHandler(Request request) async {
   // get collection dates
   results = await conn
       .query(selectCollectionDatesQuery, [locationName, streetName, date]);
-  // print("query executed");
 
   // close the connection
   await conn.close();
@@ -158,12 +142,14 @@ Future<Response> _subscribeHandler(Request request) async {
   // get the body of the request
   String body = await request.readAsString();
 
+  // initialize the variable to store the parsed request
   late Map<String, dynamic> bodyMap;
 
   try {
     // parse the body
     bodyMap = jsonDecode(body);
   } catch (e) {
+    print("the body is not a valid json");
     return Response.badRequest(body: 'the body is not a valid json');
   }
 
@@ -193,9 +179,15 @@ Future<Response> _subscribeHandler(Request request) async {
     notificationTime = bodyMap['notificationTime']!;
     // get the categories
     categories = bodyMap['categories']!;
+    // TODO: remove this
+    print("name: $name,email: $email, locationcode: $locationCode, streetCode: $streetCode, daysBefore: $daysBefore, notificationTime: $notificationTime, categories: $categories");
   } catch (e) {
+    print("a subscription attribute is missing");
     return Response.badRequest(body: 'a subscription attribute is missing');
   }
+
+  // check, if the user already exists
+  bool userExists = await _checkIfUserExists(email: email);
 
   // connect to the database
   MySqlConnection conn = await MySqlConnection.connect(_dbSettings);
@@ -224,6 +216,7 @@ Future<Response> _subscribeHandler(Request request) async {
   String selectSubscribersCategoriesQuery =
       "select category from subscribersCategoriesView where email=?;";
 
+  // initialize variables for the check
   int dbUserCount;
   String dbUserName,
       dbUserLocationCode,
@@ -233,8 +226,10 @@ Future<Response> _subscribeHandler(Request request) async {
       dbUserMailHash;
   List<String> dbUserCategories = [];
 
+  // execute the query to get user information and settings
   Results results =
       await conn.query(selectSubscriberWithSettingsQuery, [email]);
+  // set the variables
   dbUserCount = results.first[0];
   if (dbUserCount == 1) {
     dbUserName = results.first[1].toString();
@@ -253,10 +248,31 @@ Future<Response> _subscribeHandler(Request request) async {
         dbUserCategories.add(result[0].toString());
       }
     } else {
+      // // TODO: remove this
+      // print("the user's settings could not be set!");
+      // print("problematic entry/entries:");
+      // if(dbUserName!=name){
+      //   print("dbUserName == name : $dbUserName == $name");
+      // }
+      // if (dbUserLocationCode != locationCode){
+      //   print("dbUserLocationCode == locationCode : $dbUserLocationCode == $locationCode");
+      // }
+      // if(dbUserStreetCode != streetCode){
+      //   print("dbUserStreetCode == streetCode : $dbUserStreetCode == $streetCode");
+      // }
+      // if(dbUserNotificationTime == notificationTime){
+      //   print("dbUserNotificationTime == notificationTime : $dbUserNotificationTime == $notificationTime");
+      // }
+      // if(dbUserDaysBefore == daysBefore){
+      //   print("dbUserDaysBefore == daysBefore : $dbUserDaysBefore == $daysBefore");
+      // }
+      //
+
       return Response.internalServerError(
           body: "the user's settings could not be set");
     }
   } else {
+    print("the user could not be imported");
     return Response.internalServerError(body: 'the user could not be imported');
   }
 
@@ -264,21 +280,37 @@ Future<Response> _subscribeHandler(Request request) async {
   await conn.close();
 
   // TODO: implement the sending of the confirmation email
-  _sendSubscriptionConfirmationMail(dbUserName, email, dbUserMailHash);
+  _sendSubscriptionConfirmationMail(dbUserName, email, dbUserMailHash, userExists: userExists);
 
   // return the status code
   return Response.ok('');
 }
 
 Future<Response> _unsubscribeHandler(Request request, String hashValue) async {
-  bool success = await _unsubscribeUser(hashValue);
+  bool userExists = await _checkIfUserExistsByHash(hashValue: hashValue);
 
-  if (!success) {
-    return Response.internalServerError(
-        body: "the user could not be unsubscribed");
+  List<String> userDetails = await _getUserDetailsForConfirmation(
+      hashValue: hashValue);
+
+  String firstName = userDetails[0],
+      email = userDetails[1];
+
+
+  if (!userExists) {
+    return Response.internalServerError(body: "the user does not exist");
+  } else {
+    bool success = await _unsubscribeUser(hashValue);
+    if (!success) {
+      return Response.internalServerError(
+          body: "the user could not be unsubscribed");
+    } else {
+
+      await _mailService.sendUnsubscribeConfirmationMail(firstName, email);
+
+      String body = await _mailService.generateFarewellBody(firstName);
+      return Response.ok(body, headers: {'Content-Type': 'text/html'});
+    }
   }
-
-  return Response.ok("the user was successfully unsubscribed");
 }
 
 Future<bool> _unsubscribeUser(String mailHash) async {
@@ -318,15 +350,24 @@ Future<bool> _unsubscribeUser(String mailHash) async {
   return success;
 }
 
-// TODO: implement this
-void _sendSubscriptionConfirmationMail(
-    String dbUserName, String email, String dbUserMailHash) {
-// TODO: build the unsubscription link and include it in the email
+Future<Response> _sendMailsHandler(Request request) async {
+  bool success = await _mailService.sendMailToMatchingSubscribers();
 
-  print("placeholder for sending the confirmation email\n"
-      "name: $dbUserName\n"
-      "email: $email\n"
-      "mail hash: $dbUserMailHash\n");
+  if(success) {
+    return Response.ok('mails sent');
+  } else {
+    return Response.ok('there are no subscribers to be notified now');
+  }
+}
+
+void _sendSubscriptionConfirmationMail(
+    String dbUserName, String email, String dbUserMailHash, {required bool userExists}) async {
+
+  if(!userExists) {
+    _mailService.sendWelcomeMail(email);
+  } else {
+    _mailService.sendSubscriptionUpdateMail(email);
+  }
 }
 
 initDBSettings(DotEnv env) {
@@ -375,13 +416,111 @@ initDBSettings(DotEnv env) {
   }
 }
 
+Future<bool> _checkIfUserExists({required String email}) async {
+  // connect to database
+  MySqlConnection conn = await MySqlConnection.connect(_dbSettings);
+
+  // create the statement check the amount of users with the given email (1 or 0)
+  String selectSubscriberWithSettingsQuery =
+      "select count(*) from subscribersView where email=?;";
+
+  // set the parameters for the statement
+  List<String> parameters = [email];
+
+  // execute the statement
+  Results results =
+      await conn.query(selectSubscriberWithSettingsQuery, parameters);
+
+  // initialize the variables
+  int dbUserCount;
+
+  // close the connection
+  await conn.close();
+  
+  dbUserCount = results.first[0];
+  // TODO: remove this
+  print("dbUSerCount: $dbUserCount");
+  if (dbUserCount == 0) {
+    return false;
+  } else {
+    return true;
+  }
+}
+
+Future<bool> _checkIfUserExistsByHash({required String hashValue}) async {
+  // connect to database
+  MySqlConnection conn = await MySqlConnection.connect(_dbSettings);
+
+  // create the statement check the amount of users with the given email (1 or 0)
+  String selectSubscriberWithSettingsQuery =
+      "select count(*) from subscribersView where mail_hash=?;";
+
+  // set the parameters for the statement
+  List<String> parameters = [hashValue];
+
+  // execute the statement
+  Results results =
+      await conn.query(selectSubscriberWithSettingsQuery, parameters);
+
+  // initialize the variables
+  int dbUserCount;
+
+  // close the connection
+  await conn.close();
+  
+  dbUserCount = results.first[0];
+  // TODO: remove this
+  print("dbUSerCount: $dbUserCount");
+  if (dbUserCount == 0) {
+    return false;
+  } else {
+    return true;
+  }
+}
+
+
+Future<List<String>> _getUserDetailsForConfirmation({required String hashValue}) async {
+  // initialize variables
+  String name, mailAddress;
+
+  // create the statement for querying the database
+  String getUsersMailAddressFromDB = "Select name, email from subscribersView where mail_hash = ?";
+
+  // set the parameters for the query
+  List<String> parameters = [hashValue];
+
+  //connect to the database
+  MySqlConnection conn = await MySqlConnection.connect(_dbSettings);
+
+  // execute the query
+  Results results = await conn.query(getUsersMailAddressFromDB, parameters);
+
+  // close connection
+  await conn.close();
+
+  // assign the result to the variable
+  if(results.isNotEmpty){
+    name = results.first[0];
+    mailAddress = results.first[1];
+  } else{
+    name='-';
+    mailAddress = '-';
+  }
+
+  // return the mail address
+  return [name,mailAddress];
+}
+
 void main(List<String> args) async {
+  // load the environment variables from .env file and from the platform
   var env = DotEnv(includePlatformEnvironment: true)..load();
+  // initialize the cron class
+  Cron cron = Cron();
 
   // check, if .env does provide the necessary variables
   print('read all vars? ${env.isEveryDefined([
         'SERVER_PORT',
-        'EMAIL_FROM',
+        'MAIL_FROM',
         'MAIL_HOST',
         'MAIL_PORT',
         'MAIL_AUTH_USER',
@@ -390,6 +529,16 @@ void main(List<String> args) async {
 
   // initialize the database connection settings
   initDBSettings(env);
+
+  // initialize the mailing class
+  _mailService = MailService(
+      dbSettings: _dbSettings,
+      mailFromName: env['MAIL_FROM_NAME']!,
+      mailFromAddress: env['MAIL_FROM']!,
+      mailHost: env['MAIL_HOST']!,
+      mailPort: int.parse(env['MAIL_PORT']!),
+      mailAuthUser: env['MAIL_AUTH_USER']!,
+      mailAuthPass: env['MAIL_AUTH_PASS']!);
 
   // Use any available host or container IP (usually `0.0.0.0`).
   final ip = InternetAddress.anyIPv4;
@@ -404,4 +553,10 @@ void main(List<String> args) async {
   final port = int.parse(env['SERVER_PORT'] ?? '3000');
   final server = await serve(handler, ip, port);
   print('Server listening on port ${server.port}');
+
+  cron.schedule(Schedule.parse('0 * * * *'), () async {
+    // TODO: use Logger
+    print('Running hourly cron job at ${DateTime.now()}');
+    await _mailService.sendMailToMatchingSubscribers();
+  });
 }

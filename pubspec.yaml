@@ -13,6 +13,8 @@ dependencies:
   shelf_cors_headers: ^0.1.5
   mysql1: ^0.20.0
   dotenv: ^4.1.0
+  mailer: ^5.0.0
+  cron: ^0.5.1
 
 dev_dependencies:
   http: ^0.13.0

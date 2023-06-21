@@ -15,6 +15,7 @@ RUN dart compile exe bin/server.dart -o bin/server
 FROM scratch
 COPY --from=build /runtime/ /
 COPY --from=build /app/bin/server /app/bin/
+COPY --from=build /app/mail/templates /app/mail/templates
 
 # Start server.
 EXPOSE 3000

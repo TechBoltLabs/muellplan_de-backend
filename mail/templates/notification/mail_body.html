@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f4f4;
+            color: #333;
+            font-size: 18px;
+        }
+        .container {
+            width: 80%;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        h1 {
+            color: #009688;
+        }
+        .muell-entleerung {
+            border-radius: 5px;
+            background: #f4f4f4;
+            padding: 10px;
+            margin: 20px 0;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            min-height: 60px;
+        }
+        .muell-entleerung h2, .muell-entleerung p {
+            margin: 4px 0;
+            text-align: center;
+        }
+        .link {
+            color: #009688;
+            text-decoration: none;
+        }
+        .small{
+            font-size: 0.8em;
+        }
+    </style>
+    <title></title>
+</head>
+<body>
+<div class="container">
+    <h1>muellplan.de - Ihre nächste Entleerung!</h1>
+    <p>Hallo {firstName},</p>
+    <p>Hier sind die nächsten geplanten Entleerungen für Ihre Mülltonnen:</p>
+    <div><em>Anschrift:</em> {address}</div>
+
+    <!-- Platzhalter für alle Entleerungen -->
+    {collectionDatesList}
+
+    <br>
+    <p class="small">Sollten Sie keine weiteren Benachrichtigungen wünschen, können Sie sich <a href="{unsubscribeLink}" class="unsubscribe-link">hier</a> abmelden.</p>
+    <br>
+    <p>Viel Spaß beim Müllentsorgen!</p>
+    <p>Ihr Team von muellplan.de</p>
+</div>
+</body>
+</html>

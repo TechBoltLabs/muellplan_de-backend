@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      color: #333;
+      font-size: 18px;
+    }
+
+    .container {
+      width: 80%;
+      margin: 40px auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      text-align: center;
+    }
+
+    h1 {
+      color: #009688;
+    }
+
+    .link {
+      color: #009688;
+      text-decoration: none;
+    }
+
+    .settings {
+      border-radius: 5px;
+      background: #f4f4f4;
+      padding: 10px 10px 10px 30px;
+      margin: 20px 0;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+      min-height: 60px;
+    }
+
+    .settings p, .settings ul {
+      margin: 4px 0;
+      /*text-align: center;*/
+    }
+
+    .small {
+      font-size: 0.8em;
+    }
+  </style>
+  <title></title>
+</head>
+<body>
+<div class="container">
+  <h1>Änderungen Ihrer Einstellungen bei muellplan.de!</h1>
+  <p>Hallo {firstName},</p>
+  <p>Sie haben kürzlich Ihre Einstellungen auf muellplan.de geändert. Hier sind Ihre aktuellen Einstellungen:</p>
+  <div class="settings">
+    <div><em>Anschrift:</em> {address}</div>
+    <div><em>Müllarten:</em></div>
+    <div>
+      {litterCategoriesList}
+    </div>
+    <br>
+    <div><em>Benachrichtigungen:</em></div>
+    <div>{notificationDaysBefore} Tage vor der Entsorgung</div>
+    <div>{notificationTime} Uhr</div>
+  </div>
+  <p>Falls Sie Ihre Einstellungen erneut ändern möchten, können Sie dies durch eine neue Anmeldung mit der gleichen
+    E-Mail-Adresse tun.</p>
+  <br>
+  <p>Sollten Sie Hilfe benötigen, zögern Sie bitte nicht, uns unter <a href="mailto:info@muellplan.de" class="link">info@muellplan.de</a>
+    zu kontaktieren.</p>
+  <p>Falls Sie keine weiteren Benachrichtigungen erhalten möchten, können Sie sich jederzeit <a
+          href="{unsubscribeLink}" class="link">hier</a> abmelden.</p>
+  <br>
+  <p>Vielen Dank, dass Sie muellplan.de nutzen!</p>
+  <p>Ihr Team von <a href="https://muellplan.de" class="link">muellplan.de</a></p>
+</div>
+</body>
+</html>
