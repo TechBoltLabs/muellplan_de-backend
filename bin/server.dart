@@ -9,8 +9,10 @@ import 'package:shelf/shelf_io.dart';
 import 'package:shelf_cors_headers/shelf_cors_headers.dart' as shelf_cors;
 import 'package:shelf_router/shelf_router.dart';
 
+import 'services/ical_service.dart';
 import 'services/mail_service.dart';
 
+// TODO: move _dbSettings to some extra file (constanst.dart somewhere)
 late final ConnectionSettings _dbSettings;
 late final MailService _mailService;
 
@@ -24,8 +26,9 @@ final _router = Router()
   ..get('/collection-dates/<locationCode>/<streetCode>/<date>',
       _collectionDatesHandler)
   ..post('/subscribe', _subscribeHandler)
-  ..get('/unsubscribe/<hash_value>', _unsubscribeHandler);
-  // ..get('/send-mails', _sendMailsHandler);
+  ..get('/unsubscribe/<hashValue>', _unsubscribeHandler)
+  ..get('/download/ical/<encodedInfo>', _iCalDownloadHandler);
+// ..get('/send-mails', _sendMailsHandler);
 
 Response _rootHandler(Request req) {
   return Response.ok("possible endpoints are:</br>"
@@ -100,6 +103,7 @@ Future<Response> _collectionDatesHandler(Request request) async {
   String locationName, streetName;
   Map<String, List<String>> collectionDates = {};
 
+  // TODO: use location_service.getLocationNameFromCode
   String selectLocationNameQuery =
       "select locationName from locations where locationCode=?;";
   String selectStreetNameQuery =
@@ -180,7 +184,8 @@ Future<Response> _subscribeHandler(Request request) async {
     // get the categories
     categories = bodyMap['categories']!;
     // TODO: remove this
-    print("name: $name,email: $email, locationcode: $locationCode, streetCode: $streetCode, daysBefore: $daysBefore, notificationTime: $notificationTime, categories: $categories");
+    print("new subscription:"
+        "name: $name,email: $email, locationcode: $locationCode, streetCode: $streetCode, daysBefore: $daysBefore, notificationTime: $notificationTime, categories: $categories");
   } catch (e) {
     print("a subscription attribute is missing");
     return Response.badRequest(body: 'a subscription attribute is missing');
@@ -248,26 +253,6 @@ Future<Response> _subscribeHandler(Request request) async {
         dbUserCategories.add(result[0].toString());
       }
     } else {
-      // // TODO: remove this
-      // print("the user's settings could not be set!");
-      // print("problematic entry/entries:");
-      // if(dbUserName!=name){
-      //   print("dbUserName == name : $dbUserName == $name");
-      // }
-      // if (dbUserLocationCode != locationCode){
-      //   print("dbUserLocationCode == locationCode : $dbUserLocationCode == $locationCode");
-      // }
-      // if(dbUserStreetCode != streetCode){
-      //   print("dbUserStreetCode == streetCode : $dbUserStreetCode == $streetCode");
-      // }
-      // if(dbUserNotificationTime == notificationTime){
-      //   print("dbUserNotificationTime == notificationTime : $dbUserNotificationTime == $notificationTime");
-      // }
-      // if(dbUserDaysBefore == daysBefore){
-      //   print("dbUserDaysBefore == daysBefore : $dbUserDaysBefore == $daysBefore");
-      // }
-      //
-
       return Response.internalServerError(
           body: "the user's settings could not be set");
     }
@@ -280,7 +265,8 @@ Future<Response> _subscribeHandler(Request request) async {
   await conn.close();
 
   // TODO: implement the sending of the confirmation email
-  _sendSubscriptionConfirmationMail(dbUserName, email, dbUserMailHash, userExists: userExists);
+  _sendSubscriptionConfirmationMail(dbUserName, email, dbUserMailHash,
+      userExists: userExists);
 
   // return the status code
   return Response.ok('');
@@ -289,12 +275,10 @@ Future<Response> _subscribeHandler(Request request) async {
 Future<Response> _unsubscribeHandler(Request request, String hashValue) async {
   bool userExists = await _checkIfUserExistsByHash(hashValue: hashValue);
 
-  List<String> userDetails = await _getUserDetailsForConfirmation(
-      hashValue: hashValue);
+  List<String> userDetails =
+      await _getUserDetailsForConfirmation(hashValue: hashValue);
 
-  String firstName = userDetails[0],
-      email = userDetails[1];
-
+  String firstName = userDetails[0], email = userDetails[1];
 
   if (!userExists) {
     return Response.internalServerError(body: "the user does not exist");
@@ -304,13 +288,47 @@ Future<Response> _unsubscribeHandler(Request request, String hashValue) async {
       return Response.internalServerError(
           body: "the user could not be unsubscribed");
     } else {
-
       await _mailService.sendUnsubscribeConfirmationMail(firstName, email);
 
       String body = await _mailService.generateFarewellBody(firstName);
       return Response.ok(body, headers: {'Content-Type': 'text/html'});
     }
   }
+}
+
+// this gets a base64 encoded string, which is a json object with the information needed to generate the ical file
+// the json object has the following structure:
+// {
+//   "locationCode" : "locationCode",
+//   "streetCode" : "streetCode",
+//   "categories" : ["category1", "category2", "category3"]
+//   "daysBefore" : "daysBefore",
+//   "notificationTime" : "notificationTime"
+// }
+Future<Response> _iCalDownloadHandler(
+    Request request, String encodedInformation) async {
+  // decode the information
+  String decodedInformation = utf8.decode(base64.decode(encodedInformation));
+  // parse the information
+  Map<String, dynamic> information = json.decode(decodedInformation);
+
+  // get the information
+  String locationCode = information["locationCode"],
+      streetCode = information["streetCode"],
+      notificationTime = information["notificationTime"];
+  int daysBefore = int.parse(information["daysBefore"]);
+  List<String> categories = information["categories"].cast<String>();
+
+  // TODO: implement the generation of the ical file
+  String icalToRespond = await generateICalFile(
+      dbSettings: _dbSettings,
+      locationCode: locationCode,
+      streetCode: streetCode,
+      daysBefore: daysBefore,
+      notificationTime: notificationTime,
+      categories: categories);
+
+  return Response.ok(icalToRespond, headers: {'Content-Type': 'text/calendar'});
 }
 
 Future<bool> _unsubscribeUser(String mailHash) async {
@@ -353,7 +371,7 @@ Future<bool> _unsubscribeUser(String mailHash) async {
 Future<Response> _sendMailsHandler(Request request) async {
   bool success = await _mailService.sendMailToMatchingSubscribers();
 
-  if(success) {
+  if (success) {
     return Response.ok('mails sent');
   } else {
     return Response.ok('there are no subscribers to be notified now');
@@ -361,9 +379,9 @@ Future<Response> _sendMailsHandler(Request request) async {
 }
 
 void _sendSubscriptionConfirmationMail(
-    String dbUserName, String email, String dbUserMailHash, {required bool userExists}) async {
-
-  if(!userExists) {
+    String dbUserName, String email, String dbUserMailHash,
+    {required bool userExists}) async {
+  if (!userExists) {
     _mailService.sendWelcomeMail(email);
   } else {
     _mailService.sendSubscriptionUpdateMail(email);
@@ -436,7 +454,7 @@ Future<bool> _checkIfUserExists({required String email}) async {
 
   // close the connection
   await conn.close();
-  
+
   dbUserCount = results.first[0];
   // TODO: remove this
   print("dbUSerCount: $dbUserCount");
@@ -467,7 +485,7 @@ Future<bool> _checkIfUserExistsByHash({required String hashValue}) async {
 
   // close the connection
   await conn.close();
-  
+
   dbUserCount = results.first[0];
   // TODO: remove this
   print("dbUSerCount: $dbUserCount");
@@ -478,13 +496,14 @@ Future<bool> _checkIfUserExistsByHash({required String hashValue}) async {
   }
 }
 
-
-Future<List<String>> _getUserDetailsForConfirmation({required String hashValue}) async {
+Future<List<String>> _getUserDetailsForConfirmation(
+    {required String hashValue}) async {
   // initialize variables
   String name, mailAddress;
 
   // create the statement for querying the database
-  String getUsersMailAddressFromDB = "Select name, email from subscribersView where mail_hash = ?";
+  String getUsersMailAddressFromDB =
+      "Select name, email from subscribersView where mail_hash = ?";
 
   // set the parameters for the query
   List<String> parameters = [hashValue];
@@ -499,16 +518,16 @@ Future<List<String>> _getUserDetailsForConfirmation({required String hashValue})
   await conn.close();
 
   // assign the result to the variable
-  if(results.isNotEmpty){
+  if (results.isNotEmpty) {
     name = results.first[0];
     mailAddress = results.first[1];
-  } else{
-    name='-';
+  } else {
+    name = '-';
     mailAddress = '-';
   }
 
   // return the mail address
-  return [name,mailAddress];
+  return [name, mailAddress];
 }
 
 void main(List<String> args) async {
