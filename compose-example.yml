@@ -6,7 +6,7 @@ services:
     # backend and database should be in the same network
       - muellplan_de-network
     ports:
-      - 3000:3000
+      - "3000:3000"
     environment:
       DB_CON_HOST: YOUR_HOST
       DB_CON_PORT: YOUR_PORT
