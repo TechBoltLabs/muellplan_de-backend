@@ -3,6 +3,7 @@
 import 'package:ical/serializer.dart';
 import 'package:mysql1/mysql1.dart';
 
+import 'data_manipulation/date_and_time_service.dart';
 import 'database/database_service_barrel.dart';
 
 // this method gets locationCode, streetCode, daysBefore, notificationTime and categories
@@ -55,7 +56,6 @@ Future<ICalendar> generateIcalContent(
     required Map<String, List<String>> collectionDates,
     required int daysBefore,
     required String notificationTime}) async {
-
   // iterate over the collectionDates map
   for (var category in collectionDates.keys) {
     // set the category description
@@ -82,8 +82,13 @@ Future<ICalendar> generateIcalContent(
           .subtract(Duration(days: 2));
 
       // format the date to be displayed in the description
-      String collectionDateFormatted =
-          "${collectionDate.weekday} - ${dateDay.toString().padLeft(2, '0')}.${dateMonth.toString().padLeft(2, '0')}.$dateYear";
+      // get the weekday
+      String weekday = getWeekDay(date: collectionDate.toString());
+      // get the european date
+      String europeanDate =
+          getEuropeanDate(dateString: collectionDate.toString());
+      // create the formatted date
+      String collectionDateFormatted = "$weekday - $europeanDate";
 
       // create the event to be added to the calendar
       IEvent event = IEvent(

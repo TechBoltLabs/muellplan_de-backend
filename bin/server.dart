@@ -305,18 +305,20 @@ Future<Response> _unsubscribeHandler(Request request, String hashValue) async {
 //   "daysBefore" : "daysBefore",
 //   "notificationTime" : "notificationTime"
 // }
+
+// TODO: add current timestamp to the hashed information to invalidate the link after a certain time (e.g. 2 minutes)
 Future<Response> _iCalDownloadHandler(
     Request request, String encodedInformation) async {
   // decode the information
   String decodedInformation = utf8.decode(base64.decode(encodedInformation));
   // parse the information
-  Map<String, dynamic> information = json.decode(decodedInformation);
+  Map<String, dynamic> information = jsonDecode(decodedInformation);
 
   // get the information
   String locationCode = information["locationCode"],
       streetCode = information["streetCode"],
       notificationTime = information["notificationTime"];
-  int daysBefore = int.parse(information["daysBefore"]);
+  String daysBefore = information["daysBefore"];
   List<String> categories = information["categories"].cast<String>();
 
   // TODO: implement the generation of the ical file
@@ -324,11 +326,14 @@ Future<Response> _iCalDownloadHandler(
       dbSettings: _dbSettings,
       locationCode: locationCode,
       streetCode: streetCode,
-      daysBefore: daysBefore,
+      daysBefore: int.parse(daysBefore),
       notificationTime: notificationTime,
       categories: categories);
 
-  return Response.ok(icalToRespond, headers: {'Content-Type': 'text/calendar'});
+  return Response.ok(icalToRespond, headers: {
+    'Content-Type': 'text/calendar',
+    'Content-Disposition': 'attachment; filename="Abfallkalender.ics"'
+  });
 }
 
 Future<bool> _unsubscribeUser(String mailHash) async {
